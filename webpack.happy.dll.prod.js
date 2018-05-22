@@ -3,15 +3,13 @@ const os = require('os');
 const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const HtmlIncludeAssetsPlugin = require('html-webpack-include-assets-plugin');
-const ParallelUglifyPlugin = require('webpack-parallel-uglify-plugin');
-const HappyPackPlugin = require('./happypack.config');
-const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const HappyPackPlugin = require('./happypack.config.js');
 const vendorDllManifest = require('./dll/vendor.manifest.json');
 const vendorDllConfig = require('./dll/vendor.config.json');
+const ExtractTextPlugin = require('extract-text-webpack-plugin');
 
 
 module.exports = {
-    mode: 'production',
     devtool: 'source-map',
     entry: {
         app: ['./src/page/index'],
@@ -35,19 +33,19 @@ module.exports = {
                 test: /\.css$/,
                 exclude: /node_modules/,
                 include: path.resolve(__dirname, 'src'),
-                use: [
-                    MiniCssExtractPlugin.loader,
-                    'happypack/loader?id=css'
-                ]
+                use: ExtractTextPlugin.extract({
+                    fallback: 'style-loader',
+                    use: 'happypack/loader?id=css'
+                })
             },
             {
                 test: /\.scss$/,
                 exclude: /node_modules/,
                 include: path.resolve(__dirname, 'src'),
-                use: [
-                    MiniCssExtractPlugin.loader,
-                    'happypack/loader?id=scss'
-                ]
+                use: ExtractTextPlugin.extract({
+                    fallback: 'style-loader',
+                    use: 'happypack/loader?id=scss'
+                })
             },
             {
                 test: /\.(png|svg|jpe?g|gif)$/,
@@ -105,69 +103,54 @@ module.exports = {
             title: 'App',
             chunks: ['runtime', 'common', 'app'],
             template: path.resolve(__dirname, './public/layout.ejs'),
-            filename: 'index.html',
-            //bundleName: vendorDllConfig.vendor.js
+            filename: 'index.html'
         }),
         new HtmlIncludeAssetsPlugin({
             assets: [vendorDllConfig.vendor.js], // 添加的资源相对html的路径
             append: false // false 在其他资源的之前添加 true 在其他资源之后添加
         }),
-        new webpack.HashedModuleIdsPlugin(),
-        // 在webpack4中当mode为production时默认开启了Scope Hoisting 可以让webpack打包出来的代码文件更小、运行更快。
-        // new webpack.optimize.ModuleConcatenationPlugin(), // webpack3 配置，webpack4 在mode为production时无需配置
-        // 当我们需要使用动态链接库时 首先会找到manifest文件 得到name值记录的全局变量名称 然后找到动态链接库文件 进行加载
         new webpack.DllReferencePlugin({
             context: process.cwd(),
             manifest: vendorDllManifest
         }),
-        new MiniCssExtractPlugin({ //提取为外部css代码
-            filename: 'assets/css/[name].[contenthash:8].css'
+        new ExtractTextPlugin('assets/css/[name].[contenthash:8].css'),
+        new webpack.HashedModuleIdsPlugin(),
+        new webpack.DefinePlugin({
+            'process.env.NODE_ENV': JSON.stringify('production')
         }),
-        // new webpack.ContextReplacementPlugin(/moment[\/\\]locale$/, /zh|en/), 语言支持过滤
-        /* new ParallelUglifyPlugin({
-            exclude: path.resolve(__dirname, 'node_modules'),
-            include: path.resolve(__dirname, 'src'),
-            workerCount: os.cpus().length,
-            sourceMap: true,
-            uglifyJS: {
-                output: {
-                    beautify: false, // 不需要格式化
-                    comments: false // 保留注释
-                },
-                compress: { // 压缩
-                    warnings: false, // 删除无用代码时不输出警告
-                    drop_console: true, // 删除console语句
-                    collapse_vars: true, // 内嵌定义了但是只有用到一次的变量
-                    reduce_vars: true // 提取出出现多次但是没有定义成变量去引用的静态值
-                }
+        new webpack.optimize.CommonsChunkPlugin({
+            name: ['vendor', 'common'],
+            // minChunks: Infinity // 随着 入口chunk 越来越多，这个配置保证没其它的模块会打包进 公共chunk
+            minChunks: function (module, count) {
+                const resource = module.resource
+                // 以 .css 结尾的资源，重复 require 大于 1 次
+                return resource && /\.(css|scss)$/.test(resource) && count > 1
             }
-        }), */
-        /* new webpack.ProvidePlugin({ // 全局加载jquery
-            $: "jquery",
-            jQuery: "jquery"
-        }), */
+        }),
+        new webpack.optimize.ModuleConcatenationPlugin(), // Scope Hoisting
+        new webpack.optimize.UglifyJsPlugin({
+            // 利用多核能力压缩
+            beautify: {
+                cache: true,
+                workers: os.cpus().length
+            },
+            // 最紧凑的输出
+            beautify: false,
+            // 删除所有的注释
+            comments: false,
+            compress: {
+                // 在UglifyJs删除没有用到的代码时不输出警告 
+                warnings: false,
+                // 删除所有的 `console` 语句
+                //drop_console: true,
+                // 内嵌定义了但是只用到一次的变量
+                collapse_vars: true,
+                // 提取出出现多次但是没有定义成变量去引用的静态值
+                reduce_vars: true,
+            },
+            sourceMap: true
+        })
     ].concat(HappyPackPlugin),
-
-    optimization: {
-        // runtimeChunk: {  // 小于10k内联处理，减少请求次数
-        //     name: "runtime"
-        // },
-        splitChunks: {
-            cacheGroups: {
-                common: { // 抽离自己写的公共代码，common这个名字可以随意起
-                    name: 'common',  // 任意命名
-                    minChunks: 2
-                },
-                styles: {
-                    name: 'common',
-                    test: /\.css$/,
-                    chunks: 'all',
-                    enforce: true,
-                    minChunks: 2
-                }
-            }
-        }
-    },
 
     performance: {
         hints: 'error',
