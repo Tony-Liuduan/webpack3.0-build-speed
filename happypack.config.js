@@ -1,9 +1,8 @@
 const HappyPack = require('happypack');
 const os = require('os');
-
-
-// 根据我的系统的内核数量 指定线程池个数 也可以其他数量
+// 根据我的系统的内核数量 指定进程个数 也可以其他数量，默认4个
 const happyThreadPool = HappyPack.ThreadPool({ size: os.cpus().length });
+
 const isDev = process.env.NODE_ENV !== 'production';
 const cssLoaders = [
     'style-loader',
